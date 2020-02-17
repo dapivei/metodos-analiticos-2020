@@ -1,0 +1,565 @@
+---
+title: "Tarea 3. LSH y Entity matching"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+
+*Elaborado por: Daniela Pinto Veizaga*
+
+*Fecha de entrega: 16 de febrero, 2020*
+
+
+---
+
+En este ejemplo veremos como usar LSH 
+para encontrar registros
+que se refieren al mismo elemento pero están en distintas tablas, 
+y pueden diferir en cómo están registrados (entity matching). Vamos a
+usar funciones del paquete *textreuse*, aunque puedes usar
+también las funciones de las notas.
+
+## Datos
+
+Los [datos](https://dbs.uni-leipzig.de/de/research/projects/object_matching/fever/benchmark_datasets_for_entity_resolution) para este ejempo particular trata con dos fuentes bibliográficas (DBLP, ACM)
+de artículos y conferencias de cómputo. La carpeta del repositorio
+es datos/similitud/entity-matching. **El objetivo es parear las dos fuentes para
+identificar artículos que se presenteron en las dos referencias.**
+
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+acm <- read_csv('../../datos/similitud/entity_matching/ACM.csv')
+dbl <- read_csv('../../datos/similitud/entity_matching/DBLP2.csv')
+```
+
+```{r}
+head(acm)
+head(dbl)
+nrow(acm)
+nrow(dbl)
+```
+
+**Pregunta 1: ¿si intentas una aproximación por fuerza bruta, cuántas comparaciones tendrías que hacer? **
+
+```{r}
+
+
+print(paste0("Si intentamos una aproximación por fuerza bruta, el número de  comparaciones que tendríamos que hacer es: ", nrow(acm)*nrow(dbl)))
+
+```
+
+
+Si cada tabla contuviera unos 2 millones de documentos, ¿qué tan factible sería hacer todas las posibles comparaciones?
+
+```{r}
+print(paste0("Si cada tabla contuviera unos 2 millones de documentos, tendríamos que hacer alrededor de ", 2000000**2))
+
+```
+
+Es decir, es poco factible computacionalmente. Por ello, en la presente tarea ser presentarán diversas técnicas para evitar el crecimiento cuadrático de tiempo computacional requerido para hacer comparaciones por fuerza bruta.
+
+## Shingling y hashing
+
+Vamos a poner todos los documentos en una sola lista. Aunque al final
+encontremos elementos de la misma fuente en la misma cubeta, podemos
+filtrar estos.
+
+```{r}
+acm_1 <- acm %>% select(id, title, authors) %>% 
+  mutate(texto = paste(title, authors, sep = "    ")) %>% 
+  mutate(origen = "ACM") %>% 
+  mutate(id = as.character(id))
+dbl_1 <- dbl %>% select(id, title, authors) %>% 
+  mutate(texto = paste(title, authors, sep = "    ")) %>% 
+  mutate(origen = "DBL")
+acm_dbl <- bind_rows(acm_1, dbl_1)
+acm_dbl
+```
+
+**Pregunta 2: ¿por qué definimos el texto incluyendo algún espacio en blanco entre título y autor? **:
+
+
+En este caso estamos considerando a los documentos como representaciones de $k$-tejas (es decir, como colecciones de caracteres, o conjunto de sucesiones de caracteres(cadena) de tamaño $k$). En este sentido, como el campo "texto" está compuesto por dos variables distintas (title & author), es conveniente separarlas por un doble espaciado para no afectar el análisis de k-tejas. 
+
+¿Por qué se escoje un doble espaciado? Porque el análisis de tejas se realizará con un k=2 por default...
+
+**¿Qué otra estrategia se te ocurre para convertir en tejas?**
+
++ Generar cuatros espacios: "    "
++ Diferenciar las columnas: una en mayuscula y otra en minúsculas...(no estoy segura)
+
+```{r}
+# función de las notas
+calcular_tejas <- function(x, k = 2, lowercase = FALSE){
+  tokenizers::tokenize_character_shingles(x, n = k, lowercase = lowercase,
+    simplify = TRUE, strip_non_alpha = FALSE)
+}
+```
+
+En este caso escogemos 30 hashes agrupados en 10 bandas, shingles de tamaño 4, y usamos sólo título y autor.
+
+
+```{r}
+library(textreuse)
+set.seed(88345)
+# usar funciones de textreuse (que hace hash de las tejas directamente)
+funciones_minhash <- minhash_generator(30)
+nombres <- c(acm_1$id, dbl_1$id)
+texto <- c(acm_1$texto, dbl_1$texto)
+names(texto) <- nombres
+# el siguiente devuelve un objeto con los minhashes calculados
+corpus <- TextReuseCorpus(text = texto,
+  minhash_func = funciones_minhash,
+  tokenizer = calcular_tejas, 
+  k = 4, lowercase = TRUE,
+  progress = FALSE, skip_short = FALSE)
+```
+
+Por ejemplo, para el primer documento tenemos:
+
+```{r}
+corpus[[1]]$content
+corpus[[1]]$minhashes
+```
+
+Calculamos cubetas:
+
+```{r}
+lsh_conf <- lsh(corpus, bands = 10)
+```
+
+```{r echo=TRUE}
+lsh_conf
+```
+
+
+**Pregunta 3: examina la tabla `lsh_conf`. ¿Qué significa cada columna? Describe cómo se construye la columna `buckets` a partir de los minhashes.**
+
+Locality sensitive hashing (LSH) es un método mediante el cuál se encuentra potenciales pares entre un cuerpo de documentos, de manera que solo los pares "similares" sean comparados.
+
+¿Cómo funciona? 
+
+1. Toma un documento que ha sido tokenizado y hasheado, usando un algoritmo minhash. 
+
+2. Cada conjunto de firmas minhash se divide en bandas compuestas de un cierto número de filas. (Por ejemplo, las firmas de 200 minhash pueden dividirse en 20 bandas, cada una de las cuales contiene 10 filas). 
+
+3. Cada banda se divide en un cubo. Los documentos con filas idénticas en una banda se agruparán en el mismo depósito (*bucket*).
+
+La probabilidad de que un documento se marque como duplicado potencial es proporcional al número de bandas e inversamente proporcional al número de filas en cada banda.
+
+Esta función devuelve una columna adicional `buckets`. La técnica LSH solo requiere que las firmas para cada documento se calculen una vez. Por lo tanto, es posible, siempre que se use la misma función minhash y el mismo número de bandas, combinar las salidas de esta función en diferentes momentos. La salida se puede tratar como una especie de caché de firmas LSH.
+
+**Explicación:**
+
+En total tenemos `30 hashes` por documento; agrupamos los `30 hashes` por documento en `10 bandas`, por tanto nos quedamos con `3 hashes` por banda. 
+
+Al crear `10 bandas por documento`, terminamos generando 49100 documentos, mismos que son identificados con sus respectivos `ids`. La operación que se aplica es:
+
+
+$$(\underbrace{2294}_\text{doc 1}+\underbrace{2163}_\text{doc_2})* \underbrace{10}_\text{bandas x doc}= 49100$$
+A la par, al crear las `10 bandas` por documento, que resulta en un total de 49100 documentos, se genera un id de número de buckets. Los números de buckets son únicos por cada tres hashes de cada banda (el orden de los hashes importa), al igual que el contenido).
+
+## Examinar pares candidatos
+
+Agrupamos cubetas y extraemos pares similares. En *textreuse* se puede
+hacer como sigue:
+
+```{r}
+candidatos <- lsh_candidates(lsh_conf)
+
+nrow(candidatos)
+```
+
+**Pregunta a Felipe:** A Dorely le sale 13307...¿por qué?
+
+Calculamos también la similitud de jaccard exacta para cada par.
+
+```{r}
+candidatos <- lsh_compare(candidatos, corpus, jaccard_similarity)
+candidatos
+```
+
+**Pregunta 4: explica cómo se calcula la columna *score* en la tabla de candidatos.**
+
+
+Es la similtud de Jaccard, conocida como:
+
+$$sim (a,b)= \frac{|a \space \cap \space b|} {|a \space \cup \space b|}$$
+**Pregunta para Felipe** ¿la función `lsh_candidates` calcula la similitud de jaccard exacta o no?
+
+Esta similitud, resulta del calculo que se aplica sobre todos los **candidatos potenciales**.
+
+
+```{r echo=TRUE}
+candidatos <- candidatos %>% arrange(desc(score))
+candidatos
+```
+
+Podemos ver el contenido de un par de esta manera:
+
+```{r}
+corpus[["181566"]]$content
+corpus[["journals/sigmod/MedeirosP94"]]$content
+
+corpus[["174642"]]$content
+corpus[["journals/tods/CliffordC94"]]$content
+
+```
+
+
+**Pregunta 5: ¿Cuántas comparaciones tuviste qué hacer (cálculos de similitud)? Compara con el total de comparaciones que es posible hacer entre estas dos tablas.**
+
+
+De acuerdo con la respuesta a la pregunta 1, originalmente se tenían 6001104 comparaciones; ahora, con todas las transformaciones que se aplicaron, tenemos únicamente 13304 posibles candidatos y, por tanto, `13304` comparaciones.
+
+
+**Pregunta a Felipe:** A Dorely le sale 13307...¿por qué?
+
+Ahora eliminamos candidatos que aparecieron en la misma tabla (misma referencia bibliográfica):
+
+
+```{r}
+candidatos <-  candidatos %>% left_join(acm_dbl %>% select(id, origen) %>% rename(a = id, origen_a = origen))
+candidatos <-  candidatos %>% left_join(acm_dbl %>% select(id, origen) %>% rename(b = id, origen_b = origen))
+candidatos_dif <- candidatos %>% filter(origen_a != origen_b)
+candidatos_dif
+
+```
+
+
+**Pregunta 6:¿Cuántos pares candidatos obtuviste? Examina algunos elementos con similitud uno o cercana a uno. ¿Se refieren al mismo artículo en las dos fuentes? **
+
+Una vez aplicado el filtro, nos quedamos con `7,393` candidatos. Tras examinar algunos elementos con similutd uno o cercano uno, se identificó que se refieren al mismo artículo en las dos fuentes, incluso cuando los nombres de los autores están en desorden.
+
+Elemento con similitud `1`:
+
+```{r}
+corpus[["174642"]]$content
+corpus[["journals/tods/CliffordC94"]]$content
+```
+
+Elemento con similitud `0.9036145`:
+
+```{r}
+corpus[["671858"]]$content
+corpus[["conf/vldb/MohanBWSZ00"]]$content
+
+```
+
+Elemento con similitud `0.9029126`:
+
+```{r}
+corpus[["671666"]]$content
+corpus[["conf/vldb/JagadishLS99"]]$content
+
+```
+
+
+**Pregunta a Felipe:** A Dorely le sale `6799`...¿por qué?
+
+**Pregunta 7: ¿Cuántos pares candidatos obtienes si usas 30 hashes con 5 o 30 bandas, en lugar de 10 bandas? Explica cuál es la desventaja de usar demasiadas bandas, y cuál es la desventaja de usar muy pocas bandas.**
+
+Caso 30 hashes:
+
+```{r}
+lsh_conf_30 <- lsh(corpus, bands = 30)
+```
+
+```{r}
+lsh_conf_30
+```
+
+```{r}
+
+candidatos_30 <- lsh_candidates(lsh_conf_30)
+nrow(candidatos_30)
+```
+
+
+```{r}
+candidatos_30 <-  candidatos_30 %>% left_join(acm_dbl %>% select(id, origen) %>% rename(a = id, origen_a = origen))
+candidatos_30 <-  candidatos_30%>% left_join(acm_dbl %>% select(id, origen) %>% rename(b = id, origen_b = origen))
+candidatos_30_dif <- candidatos_30 %>% filter(origen_a != origen_b)
+
+nrow(candidatos_30_dif)
+```
+
+Caso 5 hashes:
+
+
+```{r}
+lsh_conf_5 <- lsh(corpus, bands = 5)
+```
+
+```{r}
+lsh_conf_5
+```
+
+
+```{r}
+candidatos_5 <- lsh_candidates(lsh_conf_5)
+
+nrow(candidatos_5)
+```
+
+
+```{r}
+candidatos_5 <- lsh_compare(candidatos_5, corpus, jaccard_similarity)
+candidatos_5
+```
+
+
+```{r}
+candidatos_5 <-  candidatos_5 %>% left_join(acm_dbl %>% select(id, origen) %>% rename(a = id, origen_a = origen))
+candidatos_5 <-  candidatos_5%>% left_join(acm_dbl %>% select(id, origen) %>% rename(b = id, origen_b = origen))
+candidatos_5_dif <- candidatos_5 %>% filter(origen_a != origen_b)
+
+nrow(candidatos_5_dif)
+```
+
+
+**Conclusión:** 
+
++ A mayor cantidad de bandas generas más buckets, generando mayor número de candidatos potenciales ya que en cada banda habrá un menor número de hashes que deben tener coincidencias.
+
++ Tener menos bandas (como por ejemplo 5 bandas) significa que tendremos menos candidatos potenciales porque estamos siendo más estrictos con nuestros criterios, ya que para este caso en particular estamos buscando la coincidencia de buckets 
+
+## Examinar resultados
+
+**Pregunta 8: Ahora considera los elementos con similitud más baja que capturaste. Examina varios casos y concluye si hay pares que no se refieren al mismo artículo, y por qué.**
+
+```{r}
+candidatos_dif<-candidatos_dif%>% arrange(score)
+candidatos_dif
+
+```
+
+**Score 0.01086957:**
+
+```{r}
+corpus[["375724"]]$content
+corpus[["conf/vldb/ZurekS99"]]$content
+
+```
+
+
+**Score 0.300578:**
+
+```{r}
+corpus[["253276"]]$content
+corpus[["conf/sigmod/RoussopoulosKS99"]]$content
+
+```
+
+
+**Score 0.3520000:**
+
+```{r}
+corpus[["331992"]]$content
+corpus[["journals/sigmod/YanG95"]]$content
+
+```
+
+
+**Score 0.3900000:**
+
+```{r}
+corpus[["765506"]]$content
+corpus[["conf/vldb/LiCHH97"]]$content
+
+```
+
+
+**Score 0.40:**
+
+```{r}
+corpus[["565140"]]$content
+corpus[["journals/sigmod/Wade96"]]$content
+
+```
+
+
+
+**Score 0.50:**
+
+```{r}
+corpus[["363954"]]$content
+corpus[["conf/vldb/BaralisW94"]]$content
+
+```
+
+
+**Score 0.55:**
+
+```{r}
+corpus[["191927"]]$content
+corpus[["conf/sigmod/SagonasSW94a"]]$content
+
+```
+
+
+**Score 0.60:**
+
+```{r}
+corpus[["293152"]]$content
+corpus[["journals/tods/FormicaGM98"]]$content
+
+```
+
+
+**Score 0.70:**
+
+```{r}
+corpus[["290595"]]$content
+corpus[["journals/sigmod/BorgidaCS98"]]$content
+
+```
+
+
+**Score 0.7037037:**
+
+```{r}
+corpus[["565124"]]$content
+corpus[["journals/sigmod/HalkidiBV02a"]]$content
+
+```
+
+
+**Score 0.7500000:**
+
+```{r}
+corpus[["223807"]]$content
+corpus[["conf/sigmod/HernandezS95"]]$content
+
+```
+
+**Score 0.8500000:**
+
+```{r}
+corpus[["253409"]]$content
+corpus[["conf/sigmod/Chakravarthy97"]]$content
+
+```
+
+**Conclusión:** Tras examinar varios casos, parece ser que por debajo del punto de corte `0.60` hay pares que no se refieren al mismo artículo. Entonces, este punto de corte, es un `threshold` confiable para identificar artículos iguales**
+
+
+**Pregunta 9: propón un punto de corte de similitud para la tabla de arriba, según tus observaciones de la pregunta anterior.**
+
+```{r}
+# código filtrando con score > tu_numero, y examinando los elementos
+# de similitud más baja
+candidatos_filt <- filter(candidatos_dif, score > 0.65)
+
+nrow(candidatos_filt)
+```
+
+**Pregunta 10: ¿cuántos pares candidatos obtuviste al final?**
+
+```{r}
+print(paste0("Cuando el punto de corte del score es de 0.65, los pares de candidatos son: ", nrow(candidatos_filt)))
+
+```
+
+## Evaluación de resultados
+
+Evalúa tus resultados con las respuestas correctas, que están en la carpeta de los datos.
+
+
+```{r}
+mapping <- read_csv("../../datos/similitud/entity_matching/DBLP-ACM_perfectMapping.csv")
+```
+
+Crea variables apropiadas para hacer join de los verdaderos matches con tus candidatos:
+
+```{r}
+candidatos_filt <- candidatos_filt %>% mutate(idDBLP = ifelse(str_detect(a, "^[0-9]*$"), b, a))
+candidatos_filt <- candidatos_filt %>% mutate(idACM = ifelse(str_detect(a, "^[0-9]*$"), a, b))
+```
+
+Podemos calcular el número de pares verdaderos que son candidatos (recuperados), el número de pares candidatos que son candidatos pero no son pares verdaderos, por ejemplo:
+
+```{r}
+mapping <- mapping %>% mutate(idACM = as.character(idACM))
+ambos <- inner_join(candidatos_filt, mapping)
+nrow(candidatos_filt)
+nrow(ambos)
+```
+
+
+**Pregunta 11: Evalúa precisión y recall de tu método. Para distintas aplicaciones que te puedas imaginar, ¿qué tan buenos son estos resultados? ¿Qué consideras mejor en este punto, tener precisión o recall alto?**
+
+**Valor predictivo positivo o precisión**:
+
+$$\frac{verdadero \space positivo}{verdadero positivo+falso \space positivo}=\frac{verdadero \space positivo}{predicho \space positivo}$$
+
+**Sensibilidad o Recall:**
+
+$$\frac{verdadero\space positivo}{falso \space negativo + verdadero \space positivo}=\frac{verdadero \space positivo}{positivo}$$
+```{r}
+precision <- nrow(ambos)/nrow(candidatos_filt)
+
+print(paste0("La precisión es ", precision))
+
+recall <- nrow(ambos)/nrow(mapping)
+
+print(paste0("El recall es ", recall))
+
+```
+
+
+Depende del contexto del problema, tratándose de un criptólogo puede ser que le interesa más tener una precisión alta; en el caso de un bibliotecólogo, probablemente sea más importante tener un recall alto versus una precisión alta. 
+
+
+## Análisis de errores
+
+Considera algunos casos que fallamos en recuperar como candidatos
+
+```{r}
+anti_join(mapping, candidatos_filt) %>% left_join(candidatos_filt)
+```
+
+
+**Pregunta 12: Considerando estos errores, ¿qué se te ocurre para mejorar el método?**
+
+Revisemos algunos casos en los que fallamos en recuperar candidatos:
+
+
+*Caso 1:*
+
+```{r}
+corpus[["959072"]]$content
+corpus[["journals/sigmod/TanK03"]]$content
+
+```
+
+En este caso, existen caracteres que no fueron identificados.
+
+*Caso 2:*
+
+```{r}
+corpus[["641001"]]$content
+corpus[["journals/sigmod/RossGN03"]]$content
+
+```
+
+*Caso 3:*
+
+```{r}
+corpus[["640999"]]$content
+corpus[["journals/sigmod/Winslett03"]]$content
+
+```
+
+
+Tras revisar estos tres casos, identificamos que es necesario hacer algo de preprocesamiento para obtener la representación; trasnformaciones usuales son:
+
++ eliminar puntuación y/o escapcios
++ convertir los textos a minúsuculas
++ esto incluye decisiones acerca de qué con palabras compuestas y otros detalles
++ emplear expresiones regulares
+
+Además, podríamos tener un mejor resultado disminuyendo el corte del score. 
