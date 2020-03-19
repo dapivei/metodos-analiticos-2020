@@ -1,1 +1,265 @@
+---
+title: "Tarea 8: redes"
+output: html_notebook
+---
 
+*Elaborado por Daniela Pinto Veizaga*
+
+### Datos
+
+Los datos son tomados de [Moviegalaxies - Social Networks in Movies](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/T4HBA3). 
+
+La descripción básica de estos datos es:
+
+> Methods: We created a movie script parser and determined same-scene appearance of characters as a proxy of connectedness (each co-appeareance is measured > > as one degree unit per scene). 
+
+
+Para los siguientes ejercicios, usa una de las películas en la carpeta datos/movie-galaxies, o usa Gephi para seleccionar otra película, y después exportar en formato *graphml*. También puedes trabajar dentro de Gephi si quieres.
+
+### Ejemplo
+
+
+Para este ejemplo vamos a hacer una análisis de redes de la película `Fantastic Mr. Fox`.
+
+```{r}
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+
+##Aditional packages installed
+
+list.of.packages <- c("igraph","netrankr")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+theme_set(theme_minimal())
+library("igraph")
+library("netrankr")
+```
+
+```{r}
+
+##escogemos la película identificada como 301
+red_rj <- igraph::read_graph("../../datos/movie-galaxies/FantasticMrFox.graphml", 
+  format = "graphml") %>% 
+  as_tbl_graph
+red_rj
+
+#?igraph
+```
+
+Puedes extraer la tabla de nodos y de aristas como sigue:
+
+```{r}
+red_rj %>% activate(nodes)
+#As a tbl_graph can be considered as a collection of two linked tables it is necessary to specify which table is referenced during manipulations. The activate verb does just that and needs affects all subsequent manipulations until a new table is activated. active is a simple query function to get the currently acitve context. In addition to the use of activate it is also possible to activate nodes or edges as part of the piping using the %N>% and %E>% pipes respectively. Do note that this approach somewhat obscures what is going on and is thus only recommended for quick, one-line, fixes in interactive use. 
+#?activate
+
+#red_rj %>% activate(edges)
+print(paste0("Número de nodos en el análisis de red de la película Fantastic Mr. Fox: ", vcount(red_rj)))
+print(paste0("Número de aristas en el análisis de red de la película Fantastic Mr. Fox: ", ecount(red_rj)))
+```
+
+
+**Pregunta 1** Explica qué información está disponible a nivel nodo y a nivel arista. 
+
+A nivel nodo está disponible la información de los nodos(32), junto con sus atributos: betweenness centrality, degree, component id, modularity class, id, r, g, b, x, y, size movie, eccentricity, clossness centrality; a nivel aristas(142), está disponible la información de las aristas, junto con sus respectivos atributos: de dónde a dónde va la arista, la etiqueta de la arista, el peso, el id de la película.
+
+
+### Centralidad de nodos
+
+Calculamos la centralidad de cada personaje según el número de conexiones que tiene en la gráfica,
+es decir, el grado de cada nodo.
+
+```{r}
+# nota: el grado lo calculamos ponderado por los pesos de las aristas (sin ponderación, 
+# cada arista aporta 1, con ponderación cada arista aporta su peso.)
+red_rj <- red_rj %>% activate(nodes) %>% 
+  mutate(central_grado = centrality_degree(weights = weight)) 
+resumen_central_grado <- red_rj %>% as_tibble() %>% 
+  select(label, central_grado) %>% arrange(desc(central_grado))
+resumen_central_grado
+```
+
+**Pregunta 2**: ¿Cuáles son los personajes más importantes en término de grado (número de conexiones) en la película que escogiste? ¿Cuáles son los menos importantes?
+
+
+```{r}
+
+#Los personas más importantes en término de grado
+head(resumen_central_grado)
+
+#Los personas menos importantes en término de grado:
+tail(resumen_central_grado)
+```
+Top 6 en `términos de grado`:
+
++ Fox
++ Ash
++ Kylie
++ Badger
++ Mrs. Fox
++ Kristofferson
+
+Usaremos también el `betweeness de los nodos`, que mide qué tan bien comunica un nodo a cualquier otro par de nodos: un nodo es importante en betweeness cuando pasan muchos caminos únicos a través de él.
+
+```{r}
+# nota: el grado lo calculamos ponderado por los pesos de las aristas (sin ponderación, 
+# cada arista aporta 1, con ponderación cada arista aporta su peso.)
+red_rj <- red_rj %>% activate(nodes) %>% 
+  mutate(central_between = centrality_betweenness(weights = weight)) 
+resumen_central_between <- red_rj %>% as_tibble() %>% select(label, central_grado, central_between) %>% 
+  arrange(desc(central_between))
+resumen_central_between
+
+```
+
+```{r}
+library(ggrepel)
+ggplot(resumen_central_between, aes(x = central_grado + 1 , y = central_between + 1, label = label)) + 
+  geom_point() + geom_text_repel() +
+  scale_x_log10() + scale_y_log10()
+```
+
+
+```{r}
+head(resumen_central_between)
+tail(resumen_central_between)
+```
+
+Top 6 en `betweeness de los nodos`
+
++ Fox
++ Bean
++ Badger
++ Kylie
++ Ash
++ Boggis
+
+**Pregunta 3** ¿Qué personajes de tu película son importantes en una medida de centralidad pero no tanto en la
+otra?
+
+Revisemos de nuevo los tops en `centralidad de nodo`en `betweeness de nodos`:
+
+|Top 6 en `términos de grado`|Top 6 en `betweeness de los nodos`|
+|-|-|
+|Fox |Fox|
+|Ash|Bean|
+|Kylie|Badger|
+|Badger|Kylie|
+|Mrs. Fox|Ash|
+|Kristofferson|Boggis|
+
+
+De la revisión de los tops en términos de grado y betweeness entre los nodos, encontramos que Mrs. Fox y Kristofferson son importantes en términso de grado, pero no tanto en términos de betweeness. Asimismo, Bean y Boggis son importantes en términos de betweeness entre los nodos, pero no en términos de grado.
+
+### Visualización
+
+Empieza haciendo una gráfica simple:
+
+```{r}
+ggraph(red_rj, layout = "circle") + 
+    geom_edge_link(colour = "lightblue") + 
+    geom_node_point() +
+    geom_node_text(aes(label = label))
+```
+
+Ahora incluye tamaño y color en tu gráfica para los nodos. Puedes usar una medida 
+de centralidad:
+
+```{r}
+ggraph(red_rj, layout = "circle") + 
+    geom_edge_link(colour = "lightblue") + 
+    geom_node_point(aes(size = central_between, colour = central_grado)) +
+    geom_node_text(aes(label = label), repel = TRUE)
+```
+
+Escoge un layout basado en fuerzas (puedes experimentar con *stress*, *fr*, *graphopt*, *gem*:
+
+```{r, fig.width = 10}
+set.seed(040404)
+ggraph(red_rj, layout = "fr") + 
+    geom_edge_link(colour = "gray") + 
+    geom_node_point(aes(size = central_between, colour = central_between)) +
+    geom_node_text(aes(label = label), size = 3, repel = TRUE)
+```
+
+
+```{r, fig.width = 10}
+set.seed(040404)
+ggraph(red_rj, layout = "fr") + 
+    geom_edge_link(colour = "gray") + 
+    geom_node_point(aes(size = central_between, colour = central_grado)) +
+    geom_node_text(aes(label = label), size = 3, repel = TRUE)
+```
+
+
+Agrega ancho de las aristas dependiendo del peso:
+
+
+```{r, fig.width = 10}
+set.seed(040404)
+#Stress: This layout is related to the stress-minimization algorithm known as Kamada-Kawai (avalaiable as the 'kk' layout), but uses another optimization strategy. It generally have better runtime, quality, and stability compared to the Kamada-Kawai layout and is thus generally preferred. The sparse version of the layout have better performance (especially on larger networks) at the expense of layout quality, but will generally outperform many other algorithms for large graphs in both runtime and quality (e.g. the 'drl' layout from igraph). 
+ggraph(red_rj, layout = "stress") + 
+    geom_edge_link(aes(edge_width = weight), alpha = 0.5, colour = "gray70") + 
+    geom_node_point(aes(size = central_between, colour = central_grado)) +
+    geom_node_text(aes(label = label), size = 3, repel = TRUE)
+```
+
+Podemos usar el logaritmo de las medidas de centralidad para apreciar mejor variación:
+
+
+
+```{r, fig.width = 10}
+
+#fr: Places nodes according to the force-directed algorithm of Fruchterman and Reingold. See igraph::with_fr()
+set.seed(040404)
+ggraph(red_rj, layout = "fr") + 
+    geom_edge_link(aes(edge_width = weight), alpha = 0.5, colour = "gray70") + 
+    geom_node_point(aes(size = central_between, colour = log(central_grado))) +
+    geom_node_text(aes(label = label), size = 3, repel = TRUE)
+```
+
+
+```{r, fig.width = 10}
+set.seed(040404)
+#graphopt: aforce-directed layout algorithm, that scales relatively well to large graphs; graphopt uses physical analogies for defining attracting and repelling forces among the vertices and then the physical system is simulated until it reaches an equilibrium. (There is no simulated annealing or anything like that, so a stable fixed point is not guaranteed.) See also http://www.schmuhl.org/graphopt/ for the original graphopt. 
+ggraph(red_rj, layout = "graphopt") + 
+    #geom_edge_link(colour = "gray") + 
+    geom_edge_link(aes(edge_width = weight), alpha = 0.5, colour = "gray70") + 
+    geom_node_point(aes(size = central_between, colour = log(central_grado))) +
+    geom_node_text(aes(label = label), size = 3, repel = TRUE)
+```
+
+
+
+```{r, fig.width = 10}
+set.seed(040404)
+#Gem: place vertices on the plane using the GEM force-directed layout algorithm. 
+##correct version
+ggraph(red_rj, layout = "gem") + 
+    #geom_edge_link(aes(edge_width = weight), alpha = 0.5, colour = "gray70") + 
+
+    geom_edge_link(colour = "gray") + 
+    geom_node_point(aes(size = central_between, colour = central_grado)) +
+    geom_node_text(aes(label = label), size = 3, repel = TRUE)
+```
+
+
+**Pregunta 4**. ¿qué algoritmos de layout funcionaron mejor para tu gráfica? ¿Por qué?
+
+
+Como la película `Fantastic Mr. Fox` es una película con relativamente pocos personajes (32), en realidad todos los algortimos de layout, expecto el circular, funcionan bastante bien para la visualización de la red. En caso de que la red fuera muchísima más densa (en términos de nodos y aristas), probablemente el algoritmo que mejor funcionaría sería el `graphopt`, layout que utiliza principios básicos de física para determinar iterativamente un diseño óptimo. ¿Cómo funciona? Cada nodo recibe masa y una carga eléctrica, y cada borde se representa como un resorte. La masa del nodo, la carga eléctrica, la longitud óptima del resorte y la constante del resorte son ajustables en la interfaz gráfica de usuario en tiempo real.
+
+Finalmente, consideremos la siguiente cita:
+
+> The choice of layout should be deliberate on the part of the user as it will have a great effect on what the end result will communicate. 
+
+**Pregunta 5**: En tu gráfica, ¿puedes explicar por qué algunos nodos son relativamente más importantes en una medida centralidad que en la otra?
+
+Sí, por ejemplo, Bean y Boggis son más importantes en términos de betweeness entre los nodos porque 
+esos personajes sirven de puente entre Mr. Fox y otros personajes.
+
+**Pregunta 6** ¿Pudiste aprender algo de la estructura de la película examinando estas
+representaciones?
+
+Sí, gracias al análisis de grafos, pude comprender la importancia de ciertos personajes como `enablers` o `bridges` entre otros personajes. 
