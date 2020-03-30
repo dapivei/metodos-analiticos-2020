@@ -2,7 +2,7 @@
 title: "Centralidad en redes"
 output: html_notebook
 ---
-
+*Daniela Pinto Veizaga*
 
 ### Datos
 
@@ -220,7 +220,7 @@ aero %>%
 
 **Pregunta 4** Explica el nodo con mayor intermediación de la gráfica. ¿Qué conecta?
 
-Conecta Alaska con el resto de los Estados.
+Es uno de los nodos (Anchorage) que conecta a Alaska con el resto de los Estados; existe otro nodo (Bethel) que también conecta a Alaska con el resto de los Estados.
 
 ### Centralidad de eigenvector
 
@@ -272,7 +272,7 @@ ggraph(layout = 'graphopt', spring.constant = 0.25, charge = 0.05, niter = 300) 
 
 **Pregunta 6**: ¿calcular centralidad y luego filtrar nodos es lo mismo que filtrar nodos y luego calcular centralidad?
 
-No. Falta desarrollar por qué.
+No, no es lo mismo por la forma en cómo se calcula la centralidad y la identificación de los nodos que toma en cuenta para el cálculo. 
 
 **Pregunta 7**: experimenta con los parámetros del layout (por ejemplo, los 2 que se usan arriba). ¿Cómo obtienes mejores resultados?
 
