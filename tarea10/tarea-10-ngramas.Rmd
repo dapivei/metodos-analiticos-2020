@@ -1,1 +1,261 @@
+---
+title: "Tarea 10: Modelos de lenguaje"
+output: html_document
+---
+*Daniela Pinto Veizaga*
+
+## Unigramas
+
+Haz los siguientes ejercicios usando el **modelo de unigramas**. Los ejercicios muestran por qué
+es importante usar los símbolos de inicio-fin de frase.
+
+Supón que solo hay dos palabras en nuestro vocabulario $a$ y $b$. Con probabilidad de ocurrencia en el 
+lenguaje de $p_a$ y $p_b$. 
+
+**1.** Si no usamos símbolos de inicio y fin de frase, ¿cuánto suman las probabilidades de las frases tamaño 1 de este vocabulario? (Supón que $p_a + p_b =1$). ¿cuánto suman las probabilidades de las frases de tamaño 2?
+
+
+**Para las frases de tamaño 1.**
+
+- Suponemos que:
+$$p_a + p_b =1$$
+
+- La probabilidad de la frase $a$:
+
+$$p_a$$
+
+- La probabilidad de la frase $b$ es $p_b$, que es lo mismo que $1-p_a$.
+
+- Entonces, la suma de las probabilidades de las frases tamaño 1 de este vocabulario es igual a: $$1-p_a+p_a=1$$.
+
+**Para las frases de tamaño 2.**
+
+- La probabilidad de $aa$ es:
+
+$$p_a*p_a=p_a^2$$
+
+- La probabilidad de $bb$:
+
+$$p_b*p_b=p_b^2=(1-p_a)^2$$
+
+- La probabilidad de $ba$:
+
+$$p_a*p_b= p_a*(1-p_a)=p_a-p_a^2$$
+
+- La probabilidad de $ab$:
+
+$$p_b*p_a=p_a-p_a^2$$
+
+- Entonces, las probabilidades de las frases de tamaño 2 suman:
+
+$$p_a^2 +(1-p_a)^2+(p_a-p_a^2)+(p_a-p_a^2)= p_a^2+1-2p_a+p_a^2+p_a+p_a-p_a^2-p_a^2=1$$
+**En resumen:**
+
+- La suma de las probabilidades de las frases de tamaño 1, suman 1. 
+
+- La suma de las probabilidades de las frases de tamaño 2, también suman 1.
+
+
+**2.** Discute por qué en incisos anteriores no podemos dar una distribución de probabilidad para frases
+de longitud arbitraria.
+
+Recordemos que el modelo de lenguaje es la distribución de probabilidad $P(w)$ con $w\in\{$ frases del lenguaje $\}$. Como tal, $\sum P(w) = 1$ y $P(w)\geq 0$ para todo $w$. De esta manera, tan solo contando a las frases de tamaño 2, tenemos que $\sum_{w\in\{F2\}} P(w) = 2$, con F2 el conjunto de frase de tamaño 2. Más aún, si consideramos a las frases de tamaño $n$, entonces $\sum_{w\in\{Fn\}} P(w) = n$, por lo que $P$ no es una distribución de probabilidad.
+
+**3.** Supón que usamos símbolos de inicio $<s>$ y fin de frase $</s>$, ¿cuánto suman las probabilidades de las frases de tamaño 1 de este vocabulario? (Supón que $p_{<s>} + p_a + p_b + p_{</s>}=1$) ¿cuánto suman las probabilidades de las frases tamaño 2?
+
+Suponemos que $p_a + p_b + p_{</s>}=1$. Con este supuesto, el inicio de una frase, $<s>$, no es aleatorio por lo que no consideramos esta palabra.
+
+**Para las frases de tamaño 1**
+
+  + Esta es la frase trivial $</s>$, la que inicia pero no dice nada. La probabilidad de esta frase es $P(</s>)=P_{</s>}$.
+
+**Para las frases de tamaño 2**
+
+  + La probabilidad de la frase $a</s>$ es 
+
+$$
+\begin{split}
+P(a</s>) & =P(a)*P(</s>)\\
+& = P_a* P_{</s>}
+\end{split}
+$$
+
+  + La probabilidad de la frase $b</s>$ es
+
+$$
+\begin{split}
+P(b</s>) & =P(b)*P(</s>)\\
+& = P_b* P_{</s>}\\
+& = [1-(P_a+P_{</s>})]*P_{</s>}
+\end{split}
+$$
+
+ + Entonces, la suma de las probabilidades de las frases de tamaño 2 de este vocabulario es
+
+$$
+\begin{split}
+P_{a}*P_{</s>} + [1-(P_a+P_{</s>})]*P_{</s>} & = \Big [P_{a} + 1-(P_a+P_{</s>})\Big ]*P_{</s>}\\
+& =(1+P_{</s>})*P_{</s>} \\
+\end{split}
+$$
+
+**Para las frases de tamaño 3**
+
++ La probabilidad de la frase $aa</s>$ es $P_a*P_a*P_{</s>}=P_a^2*P_{</s>}$
+
++ La probabilidad de la frase $bb</s>$ es 
+
+$$
+\begin{split}
+  P_b*P_b*P_{</s>} & = P_b^2*P_{</s>}\\
+  & =(1-P_a-P_{</s>})^2 P_{</s>}
+\end{split}
+$$
+
++ La probabilidad de la frase $ab</s>$ es
+  
+$$
+P_a*P_b*P_{</s>}= P_a*(1-P_a-P_{</s>})*P_{</s>}
+$$
+
++ La probabilidad de $ba</s>$ es
+  
+$$
+P_b*P_a*P_{</s>}=P_a*(1-P_a-P_s)*P_{</s>}
+$$
+
++ Entonces, la suma de las probabilidades de las frases de tamaño 3 de este vocabulario es
+  
+$$
+  P_a^2*P_{</s>}+ 
+  (1-P_a-P_{</s>})^2* P_{</s>}+2\Big[
+  P_a*(1-P_a-P_s)*P_{</s>}\Big]=\Big[P_{</s>}^2+P_a*P_{</s>}^2-2P_{</s>}+1\Big]*P_{</s>}
+$$
+
+**En resumen:**
+
+  a) La suma de las probabilidades de las frases de tamaño 2, no necesariamente suman 1. 
+
+  b) La suma de las probabilidades de las frases de tamaño 3, no necesariamente suman 1.
+
+
+**4.** (Extra más difícil) Muestra que la suma de probabilidades sobre todas frases de longitud arbitraria es 1.
+
+Vamos a pensar este problema de la siguiente manera: sea $X$ la variable aleatoria que indica la longitud de cada frase. Por ejemplo, si $X=4$, quiere decir que la frase es de longitud 4. Para que esto ocurrra, el símbolo $</s>$ no debió aparecer en las posiciones 2 ni 3 (recórdemos que la primera posición siempre le corresponde al símbolo $<s>$). Ese evento ocurre con probabilidad $(1-P_{</s>})(1-P_{</s>})P_{</s>}$. Es decir, se trata de una suceción de tamaño 3, de experimentos de Bernoulli, en la que observamos que el primer éxito ocurre en el ensayo 3.
+
+Con la intuición anterior, suponga que se tiene una sucesión infinita de ensayos independientes Bernoulli en donde la probabilidad de éxito en cada ensayo es $P_{</s>}$. Se define $X$ como el número de ensayos necesarios para observar el primer éxito, que en nuestro caso es el primer $<s>$. Entonces que $X$ tiene una distribución geométrica con parámetro $P_{<s>}$. Es decir, $X ∼ geo(p)$. Por lo que $\sum P(w) = 1$. 
+
+
+## Bigramas
+
+ (De nuestra referencia de Jurafsky). Considera el siguiente corpus:
+
+```
+<s> I am Sam </s>
+<s> Sam I am </s>
+<s> I am Sam </s>
+<s> I do not like green eggs and Sam </s>
+```
+
+Con este corpus, 
+
+**5.** Usa un modelo de bigramas (usando conteos) para calcular $P(Sam | am)$ y
+$P(I | <s>)$. 
+
+
+```{r}
+ normalizar <- function(texto, vocab = NULL){
+  # minúsculas
+  texto <- tolower(texto)
+  # varios ajustes
+  texto <- gsub("\\s+", " ", texto)
+  texto <- gsub("\\.[^0-9]", " _punto_ ", texto)
+  texto <- gsub(" _s_ $", "", texto)
+  texto <- gsub("\\.", " _punto_ ", texto)
+  texto <- gsub("[«»¡!¿?-]", "", texto) 
+  texto <- gsub(";", " _punto_coma_ ", texto) 
+  texto <- gsub("\\:", " _dos_puntos_ ", texto) 
+  texto <- gsub("\\,[^0-9]", " _coma_ ", texto)
+  texto <- gsub("\\s+", " ", texto)
+  texto
+}
+```
+
+
+```{r}
+corpus_mini <- c("<s>I am Sam</s>", "<s>Sam I am</s>", "<s>I am Sam</s>", "<s>I do not like green eggs and Sam</s>" )
+```
+
+
+```{r}
+normalizar(corpus_mini)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+#library(janeaustenr)
+#library(tokenizers)
+library(tidyverse)
+library(tidytext)
+```
+
+
+```{r}
+ejemplo <- data_frame(txt = corpus_mini) %>%
+                mutate(id = row_number()) %>%
+                mutate(txt = normalizar(txt)) 
+
+bigrams_ejemplo <- ejemplo %>% 
+                   unnest_tokens(bigramas, txt, token = "ngrams", 
+                                 n = 2) %>%
+                   group_by(bigramas) %>% tally()
+knitr::kable(bigrams_ejemplo)
+```
+
+
+$$P(Sam | am)$$
+
+
+```{r}
+amsam <-2
+am <-3
+sam_dado_am<-2/3
+print(paste0("Probabilidad de sam dado am: ", round(sam_dado_am,3)))
+
+log_sam_dado_am<-log(2)-log(3)
+print(paste0("Logaritmo de la probabilidad de sam dado am: ", round(log_sam_dado_am, 3)))
+
+```
+
+$$P(I | <s>)$$ 
+
+
+```{r}
+si <-3
+s<-4
+i_dado_s<-3/4
+print(paste0("Probabilidad de I dado <s>: ", round(i_dado_s,3)))
+
+log_i_dado_s<-log(3)-log(4)
+print(paste0("Logaritmo de la probabilidad de sam dado am: ", round(log_i_dado_s, 3)))
+
+```
+
+**6.**  Usa el modelo de bigramas para calcular la probabilidad de la frase *I am Sam*
+
+La probabilidad de la frase *I am Sam* está dada por:
+
+$$P(\text{i am sam}) =P(i|<s>)*P(am|i)*P(sam | am).$$ 
+
+Ya conocemos $P(i|<s>)$ y $P(sam | am)$ del ejercicio anterior, falta cacular $P(am|i)$:
+
+$$
+\begin{split}
+P(am|i) & = \frac{P(i,\, am)}{P(i)}\\
+& = \frac{3}{4}.
+\end{split}
+$$
+De esta manera, $P(\text{i am sam})=\frac{3}{4}\frac{3}{4}\frac{2}{3}=\frac{3}{8}$.
+
 
